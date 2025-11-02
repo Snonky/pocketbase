@@ -442,6 +442,13 @@ type RealtimeSubscribeRequestEvent struct {
 	Subscriptions []string
 }
 
+type RealtimeMessagesSentEvent struct {
+	hook.Event
+
+	Record *Record
+	Action string
+}
+
 // -------------------------------------------------------------------
 // Record CRUD API events data
 // -------------------------------------------------------------------

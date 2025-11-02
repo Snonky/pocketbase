@@ -490,8 +490,11 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 		return errors.New("[broadcastRecord] Record collection not set")
 	}
 
+	trackerChan := make(chan any, 1)
+
 	chunks := app.SubscriptionsBroker().ChunkedClients(clientsChunkSize)
 	if len(chunks) == 0 {
+		go waitForRealtimeMessagesSent(trackerChan, app, 0, action, record)
 		return nil // no subscribers
 	}
 
@@ -514,6 +517,17 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 	if len(optAccessCheckApp) > 0 {
 		accessCheckApp = optAccessCheckApp[0]
 	}
+
+	numSubscriptions := 0
+	for _, chunk := range chunks {
+		for _, client := range chunk {
+			for prefix := range subscriptionRuleMap {
+				subs := client.Subscriptions(prefix)
+				numSubscriptions += len(subs)
+			}
+		}
+	}
+	go waitForRealtimeMessagesSent(trackerChan, app, numSubscriptions, action, record)
 
 	for _, chunk := range chunks {
 		group.Go(func() error {
@@ -541,6 +555,7 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 						}
 
 						if !realtimeCanAccessRecord(accessCheckApp, record, requestInfo, rule) {
+							trackerChan <- struct{}{}
 							continue
 						}
 
@@ -585,6 +600,7 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 								slog.String("sub", sub),
 								slog.Any("error", enrichErr),
 							)
+							trackerChan <- struct{}{}
 							continue
 						}
 
@@ -619,6 +635,7 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 								slog.String("collectionName", cleanRecord.Collection().Name),
 								slog.String("error", err.Error()),
 							)
+							trackerChan <- struct{}{}
 							continue
 						}
 
@@ -627,17 +644,22 @@ func realtimeBroadcastRecord(app core.App, action string, record *core.Record, d
 							Data: dataBytes,
 						}
 
+						trackedMsg := subscriptions.TrackedMessage{
+							Message:     msg,
+							TrackerChan: trackerChan,
+						}
+
 						if dryCache {
-							messages, ok := client.Get(dryCacheKey).([]subscriptions.Message)
+							messages, ok := client.Get(dryCacheKey).([]subscriptions.TrackedMessage)
 							if !ok {
-								messages = []subscriptions.Message{msg}
+								messages = []subscriptions.TrackedMessage{trackedMsg}
 							} else {
-								messages = append(messages, msg)
+								messages = append(messages, trackedMsg)
 							}
 							client.Set(dryCacheKey, messages)
 						} else {
 							routine.FireAndForget(func() {
-								client.Send(msg)
+								client.SendTracked(trackedMsg)
 							})
 						}
 					}
@@ -663,7 +685,7 @@ func realtimeBroadcastDryCacheKey(app core.App, key string) error {
 	for _, chunk := range chunks {
 		group.Go(func() error {
 			for _, client := range chunk {
-				messages, ok := client.Get(key).([]subscriptions.Message)
+				messages, ok := client.Get(key).([]subscriptions.TrackedMessage)
 				if !ok {
 					continue
 				}
@@ -674,7 +696,7 @@ func realtimeBroadcastDryCacheKey(app core.App, key string) error {
 
 				routine.FireAndForget(func() {
 					for _, msg := range messages {
-						client.Send(msg)
+						client.SendTracked(msg)
 					}
 				})
 			}
@@ -698,7 +720,11 @@ func realtimeUnsetDryCacheKey(app core.App, key string) error {
 	for _, chunk := range chunks {
 		group.Go(func() error {
 			for _, client := range chunk {
-				if client.Get(key) != nil {
+				messages, ok := client.Get(key).([]subscriptions.TrackedMessage)
+				for _, message := range messages {
+					message.TrackerChan <- struct{}{}
+				}
+				if ok {
 					client.Unset(key)
 				}
 			}
@@ -774,4 +800,28 @@ func realtimeCanAccessRecord(
 	err = q.Limit(1).Row(&exists)
 
 	return err == nil && exists > 0
+}
+
+func waitForRealtimeMessagesSent(
+	trackerChan chan any,
+	app core.App,
+	numSubscriptions int,
+	action string,
+	record *core.Record,
+) {
+	sentEvent := new(core.RealtimeMessagesSentEvent)
+	sentEvent.Record = record
+	sentEvent.Action = action
+	if numSubscriptions == 0 {
+		app.OnRealtimeMessagesSent().Trigger(sentEvent)
+		return
+	}
+	for range trackerChan {
+		numSubscriptions -= 1
+
+		if numSubscriptions == 0 {
+			app.OnRealtimeMessagesSent().Trigger(sentEvent)
+			break
+		}
+	}
 }

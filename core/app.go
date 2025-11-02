@@ -1262,6 +1262,11 @@ type App interface {
 	// modify the submitted change.
 	OnRealtimeSubscribeRequest() *hook.Hook[*RealtimeSubscribeRequestEvent]
 
+	/// OnRealtimeMessagesSent hook is triggered after all realtime subscriptions
+	/// to a record's CRUD operations have been served. Also triggers when there
+	/// are no active subscriptions at all.
+	OnRealtimeMessagesSent() *hook.Hook[*RealtimeMessagesSentEvent]
+
 	// ---------------------------------------------------------------
 	// Settings API event hooks
 	// ---------------------------------------------------------------

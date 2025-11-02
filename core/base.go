@@ -149,6 +149,7 @@ type BaseApp struct {
 	onRealtimeConnectRequest   *hook.Hook[*RealtimeConnectRequestEvent]
 	onRealtimeMessageSend      *hook.Hook[*RealtimeMessageEvent]
 	onRealtimeSubscribeRequest *hook.Hook[*RealtimeSubscribeRequestEvent]
+	onRealtimeMessagesSent     *hook.Hook[*RealtimeMessagesSentEvent]
 
 	// settings event hooks
 	onSettingsListRequest   *hook.Hook[*SettingsListRequestEvent]
@@ -297,6 +298,7 @@ func (app *BaseApp) initHooks() {
 	app.onRealtimeConnectRequest = &hook.Hook[*RealtimeConnectRequestEvent]{}
 	app.onRealtimeMessageSend = &hook.Hook[*RealtimeMessageEvent]{}
 	app.onRealtimeSubscribeRequest = &hook.Hook[*RealtimeSubscribeRequestEvent]{}
+	app.onRealtimeMessagesSent = &hook.Hook[*RealtimeMessagesSentEvent]{}
 
 	// settings event hooks
 	app.onSettingsListRequest = &hook.Hook[*SettingsListRequestEvent]{}
@@ -1029,6 +1031,10 @@ func (app *BaseApp) OnRealtimeMessageSend() *hook.Hook[*RealtimeMessageEvent] {
 
 func (app *BaseApp) OnRealtimeSubscribeRequest() *hook.Hook[*RealtimeSubscribeRequestEvent] {
 	return app.onRealtimeSubscribeRequest
+}
+
+func (app *BaseApp) OnRealtimeMessagesSent() *hook.Hook[*RealtimeMessagesSentEvent] {
+	return app.onRealtimeMessagesSent
 }
 
 // -------------------------------------------------------------------

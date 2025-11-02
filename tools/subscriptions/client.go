@@ -73,6 +73,8 @@ type Client interface {
 
 	// Send sends the specified message to the client's channel (if not discarded).
 	Send(m Message)
+
+	SendTracked(m TrackedMessage)
 }
 
 // ensures that DefaultClient satisfies the Client interface
@@ -257,6 +259,16 @@ func (c *DefaultClient) Discard() {
 		return
 	}
 
+	for _, value := range c.store {
+		trackedMessages, ok := value.([]TrackedMessage)
+		if !ok {
+			continue
+		}
+		for _, trackedMessage := range trackedMessages {
+			trackedMessage.TrackerChan <- struct{}{}
+		}
+	}
+
 	close(c.channel)
 
 	c.isDiscarded = true
@@ -282,4 +294,21 @@ func (c *DefaultClient) Send(m Message) {
 	}()
 
 	c.channel <- m
+}
+
+func (c *DefaultClient) SendTracked(m TrackedMessage) {
+	defer func() {
+		m.TrackerChan <- struct{}{}
+	}()
+
+	if c.IsDiscarded() {
+		return
+	}
+
+	// "gracefully" handle panics since channel close is not blocking and could cause races
+	defer func() {
+		recover()
+	}()
+
+	c.channel <- m.Message
 }

@@ -10,6 +10,11 @@ type Message struct {
 	Data []byte `json:"data"`
 }
 
+type TrackedMessage struct {
+	Message     Message
+	TrackerChan chan any
+}
+
 // WriteSSE writes the current message in a SSE format into the provided writer.
 //
 // For example, writing to a router.Event:
